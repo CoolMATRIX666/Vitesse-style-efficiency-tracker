@@ -1,0 +1,1714 @@
+<!DOCTYPE html>
+<html lang="en-GB" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Vitesse Shift & Pickout Tracker</title>
+
+  <!-- Inline PWA Manifest & App Icons for Chrome Android Installability -->
+  <script>
+    (function setupPWAManifest() {
+      try {
+        function createAppIconDataUrl(size) {
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, size, size);
+          ctx.fillStyle = '#10b981';
+          const pad = Math.round(size * 0.14);
+          ctx.beginPath();
+          ctx.roundRect(pad, pad, size - pad * 2, size - pad * 2, Math.round(size * 0.2));
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `bold ${Math.round(size * 0.44)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('V%', size / 2, size / 2 + Math.round(size * 0.03));
+          return canvas.toDataURL('image/png');
+        }
+
+        const icon192 = createAppIconDataUrl(192);
+        const icon512 = createAppIconDataUrl(512);
+
+        const appleIcon = document.createElement('link');
+        appleIcon.rel = 'apple-touch-icon';
+        appleIcon.href = icon192;
+        document.head.appendChild(appleIcon);
+
+        const manifest = {
+          name: 'Vitesse Shift & Pickout Tracker',
+          short_name: 'Vitesse Tracker',
+          description: 'Four-Week Vitesse Efficiency & Case Pick Tracker',
+          start_url: window.location.href,
+          scope: './',
+          display: 'standalone',
+          orientation: 'portrait',
+          background_color: '#0f172a',
+          theme_color: '#0f172a',
+          icons: [
+            { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+            { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+          ]
+        };
+
+        const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+        const manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        manifestLink.href = URL.createObjectURL(blob);
+        document.head.appendChild(manifestLink);
+      } catch (e) {
+        console.warn('PWA manifest setup skipped:', e);
+      }
+    })();
+  </script>
+
+  <!-- Google Fonts: Inter & JetBrains Mono for crisp numerical readouts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              500: '#10b981',
+              600: '#059669',
+              900: '#064e3b',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Chart.js for responsive mobile analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Prevent horizontal overflow and improve Android touch feel */
+    html, body {
+      overscroll-behavior-y: contain;
+      -webkit-tap-highlight-color: transparent;
+    }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type="number"] {
+      -moz-appearance: textfield;
+    }
+    .safe-bottom {
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 5rem);
+    }
+    .nav-safe {
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-white min-h-screen">
+
+  <!-- TOP LIVE CLOCK & STATUS HEADER -->
+  <header class="sticky top-0 z-30 bg-slate-900 text-white border-b border-slate-800 shadow-lg">
+    <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between gap-2">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="liveDateText" class="text-xs font-semibold uppercase tracking-wider text-slate-300">
+            Loading date...
+          </span>
+        </div>
+        <div class="flex items-baseline gap-2 mt-0.5">
+          <span id="liveClockText" class="font-mono text-2xl font-bold tracking-tight text-white">
+            00:00:00
+          </span>
+          <span id="headerActiveSlotBadge" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-emerald-400 border border-slate-700">
+            Week 1 • Shift 1
+          </span>
+        </div>
+      </div>
+
+      <!-- Theme Toggle & Quick Today Jump -->
+      <div class="flex items-center gap-2">
+        <button id="jumpTodayBtn" type="button" title="Jump to Today's Shift"
+          class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold shadow transition">
+          Today
+        </button>
+        <button id="themeToggleBtn" type="button" aria-label="Toggle Light/Dark Mode"
+          class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 transition">
+          <!-- Sun / Moon Icon injected by JS -->
+          <svg id="themeIcon" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- TOAST NOTIFICATION BANNER -->
+  <div id="toastBanner" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 hidden max-w-sm w-[92%] pointer-events-none">
+    <div id="toastInner" class="px-4 py-3 rounded-2xl shadow-xl border text-sm font-semibold flex items-center justify-between gap-3 bg-slate-900 text-white border-emerald-500/50">
+      <span id="toastMessage">Saved!</span>
+    </div>
+  </div>
+
+  <!-- MAIN SCROLLABLE CONTENT CONTAINER -->
+  <main class="max-w-lg mx-auto px-4 pt-4 safe-bottom space-y-4">
+
+    <!-- ========================================================= -->
+    <!-- SCREEN 1: TODAY'S SHIFT (ACTIVE LOGGER)                   -->
+    <!-- ========================================================= -->
+    <section id="screen-today" class="space-y-4">
+
+      <!-- Date & Shift Slot Connection Bar -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-800">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Active Shift Date</span>
+            <p id="dateMatchStatus" class="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-0.5">
+              Linked to today's date
+            </p>
+          </div>
+          <!-- Shift Slot Selector (1 to 20) -->
+          <select id="slotSelect" aria-label="Select Shift Slot"
+            class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-bold rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          </select>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2">
+          <div>
+            <label for="shiftDateInput" class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+              Date Worked (Mon–Sun)
+            </label>
+            <input type="date" id="shiftDateInput"
+              class="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          </div>
+          <div class="flex items-end">
+            <div id="dayOfWeekDisplay" class="w-full bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between">
+              <span>Day:</span>
+              <span id="selectedDayName" class="text-emerald-600 dark:text-emerald-400">Wednesday</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRIMARY KPI CARD: DAILY EFFICIENCY % (STRICTLY DECOUPLED FROM CASES) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border-2 border-slate-200 dark:border-slate-800 relative overflow-hidden">
+        <div class="flex items-start justify-between gap-2 mb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
+                Primary KPI
+              </span>
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Benchmark: <strong id="displayBenchmarkLabel" class="text-slate-800 dark:text-slate-200">85.0%</strong>
+              </span>
+            </div>
+            <h2 class="text-lg font-extrabold text-slate-900 dark:text-white mt-1">
+              Daily Vitesse Efficiency %
+            </h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Time-based Vitesse rating (independent of case volume)
+            </p>
+          </div>
+          <!-- Traffic-Light Status Pill -->
+          <span id="effStatusBadge" class="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+            Not Logged
+          </span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div class="relative flex-1">
+            <input type="number" id="efficiencyInput" step="0.1" min="0" max="300" inputmode="decimal" placeholder="e.g. 88.5"
+              class="w-full font-mono text-3xl font-extrabold bg-slate-50 dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-2xl pl-4 pr-10 py-3.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition" />
+            <span class="absolute right-4 top-1/2 -translate-y-1/2 font-mono text-xl font-bold text-slate-400">%</span>
+          </div>
+          <div class="text-right min-w-[92px] bg-slate-50 dark:bg-slate-800/70 rounded-2xl p-3 border border-slate-200 dark:border-slate-700/70">
+            <span class="block text-[10px] font-bold uppercase text-slate-400">vs Target</span>
+            <span id="effVarianceDisplay" class="font-mono text-base font-extrabold text-slate-500 dark:text-slate-400">
+              --
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECONDARY METRIC CARD: DAILY CASE PICK RUNNING TOTAL -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <span class="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30">
+              Secondary Volume Metric
+            </span>
+            <h2 class="text-lg font-extrabold text-slate-900 dark:text-white mt-1">
+              Cases Picked (Running Total)
+            </h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Overwrite with your latest Vitesse total during shift
+            </p>
+          </div>
+          <span id="pickoutStatusBadge" class="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+            0% Target
+          </span>
+        </div>
+
+        <!-- Running Total Input + Quick Increment Buttons -->
+        <div>
+          <input type="number" id="casesInput" step="1" min="0" max="20000" inputmode="numeric" placeholder="0"
+            class="w-full font-mono text-3xl font-extrabold bg-slate-50 dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-2xl px-4 py-3.5 text-slate-900 dark:text-white focus:outline-none focus:border-sky-500 transition" />
+
+          <!-- Quick Add Buttons for Mid-Shift Convenience -->
+          <div class="grid grid-cols-4 gap-2 mt-2.5">
+            <button type="button" data-add-cases="50"
+              class="quick-case-btn py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 font-mono text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition">
+              +50
+            </button>
+            <button type="button" data-add-cases="100"
+              class="quick-case-btn py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 font-mono text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition">
+              +100
+            </button>
+            <button type="button" data-add-cases="250"
+              class="quick-case-btn py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 font-mono text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition">
+              +250
+            </button>
+            <button type="button" id="setPickoutExactBtn"
+              class="py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 active:scale-95 font-mono text-xs font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 transition">
+              1,575
+            </button>
+          </div>
+        </div>
+
+        <!-- Auto-Calculated Remaining & Surplus Counters -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-slate-50 dark:bg-slate-800/80 rounded-2xl p-3.5 border border-slate-200 dark:border-slate-700/80">
+            <span class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Cases Remaining
+            </span>
+            <span id="casesRemainingDisplay" class="font-mono text-2xl font-extrabold text-amber-600 dark:text-amber-400 mt-0.5 block">
+              1,575
+            </span>
+            <span class="text-[11px] text-slate-400">to reach <span id="targetRefText">1,575</span></span>
+          </div>
+
+          <div class="bg-slate-50 dark:bg-slate-800/80 rounded-2xl p-3.5 border border-slate-200 dark:border-slate-700/80">
+            <span class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Cases Above Pickout
+            </span>
+            <span id="casesAboveDisplay" class="font-mono text-2xl font-extrabold text-slate-400 dark:text-slate-500 mt-0.5 block">
+              0
+            </span>
+            <span class="text-[11px] text-slate-400">bonus over target</span>
+          </div>
+        </div>
+
+        <!-- Visual Pickout Progress Bar -->
+        <div>
+          <div class="flex justify-between items-center text-xs font-bold mb-1.5">
+            <span class="text-slate-600 dark:text-slate-300">Shift Pickout Progress</span>
+            <span id="pickoutPctText" class="font-mono text-sky-600 dark:text-sky-400">0.0%</span>
+          </div>
+          <div class="w-full h-4 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-300/60 dark:border-slate-700">
+            <div id="pickoutProgressBar" class="h-full rounded-full bg-sky-500 transition-all duration-300" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OPTIONAL SHIFT DETAILS (COLLAPSIBLE) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <button type="button" id="toggleOptionalBtn"
+          class="w-full px-4 py-3.5 flex items-center justify-between text-left font-bold text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+          <span>Optional Details (Hours, Chamber, Notes)</span>
+          <svg id="optionalChevron" class="w-5 h-5 text-slate-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        <div id="optionalFieldsPanel" class="hidden px-4 pb-4 pt-1 space-y-3 border-t border-slate-100 dark:border-slate-800">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="hoursInput" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                Hours Worked
+              </label>
+              <input type="number" id="hoursInput" step="0.25" min="0" max="24" inputmode="decimal" placeholder="e.g. 8.0"
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+            <div>
+              <label for="deptInput" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                Chamber / Task
+              </label>
+              <select id="deptInput"
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <option value="">-- Select --</option>
+                <option value="Ambient">Ambient</option>
+                <option value="Chilled / Fresh">Chilled / Fresh</option>
+                <option value="Freezer">Freezer</option>
+                <option value="Produce / BWS">Produce / BWS</option>
+                <option value="Loading / Other">Loading / Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label for="notesInput" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
+              Shift Notes
+            </label>
+            <input type="text" id="notesInput" placeholder="e.g. Heavy aisles, wrap delay, late start..."
+              class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          </div>
+        </div>
+      </div>
+
+      <!-- PRIMARY SAVE / CLEAR ACTION BUTTONS -->
+      <div class="flex gap-3 pt-1">
+        <button type="button" id="clearCurrentShiftBtn"
+          class="px-4 py-4 rounded-2xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 active:scale-95 text-slate-700 dark:text-slate-300 font-bold text-sm transition">
+          Clear
+        </button>
+        <button type="button" id="saveShiftBtn"
+          class="flex-1 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-extrabold text-base shadow-lg shadow-emerald-600/25 transition flex items-center justify-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          <span>Save Shift Data</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- SCREEN 2: SUMMARY & ANALYTICS (DEDICATED FIGURES SCREEN)  -->
+    <!-- ========================================================= -->
+    <section id="screen-summary" class="hidden space-y-4">
+
+      <!-- 1. HERO 4-WEEK EFFICIENCY SUMMARY CARD (PRIMARY METRIC) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border-2 border-slate-200 dark:border-slate-800">
+        <div class="flex items-center justify-between mb-2">
+          <span class="px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
+            4-Week Rolling Efficiency
+          </span>
+          <span id="sumOverallEffBadge" class="px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-slate-200 dark:bg-slate-800 text-slate-500">
+            No Data
+          </span>
+        </div>
+
+        <div class="flex items-baseline justify-between mt-2">
+          <div>
+            <span id="sumOverallEffValue" class="font-mono text-4xl font-extrabold text-slate-900 dark:text-white">
+              --.-%
+            </span>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Average of recorded daily Vitesse ratings (blank shifts excluded)
+            </p>
+          </div>
+          <div class="text-right">
+            <span class="block text-[11px] font-bold uppercase text-slate-400">vs <span id="sumBenchRef">85.0%</span></span>
+            <span id="sumOverallVariance" class="font-mono text-lg font-extrabold text-slate-500">--</span>
+          </div>
+        </div>
+
+        <!-- Secondary Efficiency Stats Grid -->
+        <div class="grid grid-cols-3 gap-2.5 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
+          <div class="bg-slate-50 dark:bg-slate-800/70 rounded-xl p-2.5">
+            <span class="block text-[10px] font-bold uppercase text-slate-400">Shifts ≥ Target</span>
+            <span id="sumShiftsMeetingBench" class="font-mono text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block">0 / 0</span>
+          </div>
+          <div class="bg-slate-50 dark:bg-slate-800/70 rounded-xl p-2.5">
+            <span class="block text-[10px] font-bold uppercase text-slate-400">Best Shift</span>
+            <span id="sumHighestEff" class="font-mono text-base font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5 block">--</span>
+          </div>
+          <div class="bg-slate-50 dark:bg-slate-800/70 rounded-xl p-2.5">
+            <span class="block text-[10px] font-bold uppercase text-slate-400">Lowest Shift</span>
+            <span id="sumLowestEff" class="font-mono text-base font-extrabold text-rose-600 dark:text-rose-400 mt-0.5 block">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. WEEKLY BREAKDOWN CARDS (WEEKS 1 TO 4) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-800">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+            Weekly Breakdown (Weeks 1–4)
+          </h3>
+          <span class="text-xs font-semibold text-slate-400">5 Shifts / Week</span>
+        </div>
+
+        <div id="weeklyCardsContainer" class="space-y-2.5">
+          <!-- Populated dynamically by JS -->
+        </div>
+      </div>
+
+      <!-- 3. SEPARATE 4-WEEK CASE PICK VOLUME CARD -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-800">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <span class="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30">
+              Independent Volume Summary
+            </span>
+            <h3 class="text-base font-extrabold text-slate-900 dark:text-white mt-1">
+              4-Week Case Pick Totals
+            </h3>
+          </div>
+          <span id="sumPickoutHitsBadge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-500/15 text-sky-600 dark:text-sky-400">
+            0 Pickouts
+          </span>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2.5 text-center">
+          <div class="bg-slate-50 dark:bg-slate-800/70 rounded-xl p-3">
+            <span class="block text-[10px] font-bold uppercase text-slate-400">Total Cases</span>
+            <span id="sumTotalCases" class="font-mono text-lg font-extrabold text-slate-900 dark:text-white mt-0.5 block">0</span>
+          </div>
+          <div class="bg-slate-50 dark:bg-slate-800/70 rounded-xl p-3">
+            <span class="block text-[10px] font-bold uppercase text-slate-400">Avg / Shift</span>
+            <span id="sumAvgCases" class="font-mono text-lg font-extrabold text-sky-600 dark:text-sky-400 mt-0.5 block">0</span>
+          </div>
+          <div class="bg-slate-50 dark:bg-slate-800/70 rounded-xl p-3">
+            <span class="block text-[10px] font-bold uppercase text-slate-400">Pickout Hits</span>
+            <span id="sumPickoutRatio" class="font-mono text-lg font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5 block">0 / 0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. CHARTS SECTION -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 space-y-5">
+        <div>
+          <h3 class="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
+            Daily Efficiency % vs. Benchmark
+          </h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
+            Dashed line indicates your <span id="chartBenchText">85.0%</span> Vitesse benchmark
+          </p>
+          <div class="h-52 w-full">
+            <canvas id="dailyEffChart"></canvas>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 dark:border-slate-800">
+          <h3 class="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
+            Weekly Average Efficiency (Weeks 1–4)
+          </h3>
+          <div class="h-44 w-full mt-2">
+            <canvas id="weeklyEffChart"></canvas>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 dark:border-slate-800">
+          <h3 class="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
+            Cases Picked per Shift vs. Pickout Target
+          </h3>
+          <div class="h-48 w-full mt-2">
+            <canvas id="dailyCasesChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- SCREEN 3: 20-SHIFT LOG (FULL 4-WEEK ROLLING SCHEDULE)     -->
+    <!-- ========================================================= -->
+    <section id="screen-log" class="hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">20-Shift Rolling Log</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Tap any shift card to edit or update</p>
+        </div>
+        <!-- Week Filter Pills -->
+        <div class="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
+          <button type="button" data-week-filter="all" class="week-filter-btn px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm">All</button>
+          <button type="button" data-week-filter="1" class="week-filter-btn px-2.5 py-1.5 rounded-lg text-slate-600 dark:text-slate-400">W1</button>
+          <button type="button" data-week-filter="2" class="week-filter-btn px-2.5 py-1.5 rounded-lg text-slate-600 dark:text-slate-400">W2</button>
+          <button type="button" data-week-filter="3" class="week-filter-btn px-2.5 py-1.5 rounded-lg text-slate-600 dark:text-slate-400">W3</button>
+          <button type="button" data-week-filter="4" class="week-filter-btn px-2.5 py-1.5 rounded-lg text-slate-600 dark:text-slate-400">W4</button>
+        </div>
+      </div>
+
+      <div id="shiftLogList" class="space-y-3">
+        <!-- Populated dynamically by JS -->
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- SCREEN 4: SETTINGS, GOOGLE SHEETS EXPORT & ANDROID GUIDE  -->
+    <!-- ========================================================= -->
+    <section id="screen-settings" class="hidden space-y-4">
+
+      <!-- Target & Benchmark Settings -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
+        <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">Targets & Benchmarks</h2>
+
+        <div>
+          <label for="settingBenchmarkInput" class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+            Vitesse Efficiency Benchmark (%)
+          </label>
+          <input type="number" id="settingBenchmarkInput" step="0.5" min="1" max="200" inputmode="decimal"
+            class="w-full font-mono text-lg font-bold bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          <p class="text-[11px] text-slate-400 mt-1">Default is 85.0%. Amber warning triggers within 5% below benchmark.</p>
+        </div>
+
+        <div>
+          <label for="settingPickoutInput" class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+            Standard Shift Pickout Target (Cases)
+          </label>
+          <input type="number" id="settingPickoutInput" step="25" min="100" max="10000" inputmode="numeric"
+            class="w-full font-mono text-lg font-bold bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500" />
+          <p class="text-[11px] text-slate-400 mt-1">Default is 1,575 cases per shift.</p>
+        </div>
+
+        <button type="button" id="saveSettingsBtn"
+          class="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-sm shadow transition">
+          Save Target Settings
+        </button>
+      </div>
+
+      <!-- Google Sheets CSV Export & Backup -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 space-y-3">
+        <h2 class="text-base font-extrabold text-slate-900 dark:text-white">Google Sheets Sync & Backup</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Export your 20 shifts as a CSV file formatted to match your Google Sheets <strong>Daily Tracker</strong> tab, or save a full JSON backup.
+        </p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          <button type="button" id="exportCsvBtn"
+            class="py-3.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>Export CSV (For Sheets)</span>
+          </button>
+
+          <button type="button" id="exportJsonBtn"
+            class="py-3.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 border border-slate-700 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            <span>Download JSON Backup</span>
+          </button>
+        </div>
+
+        <div class="pt-1">
+          <label for="importJsonInput"
+            class="w-full py-3 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-2 border border-dashed border-slate-300 dark:border-slate-600 cursor-pointer transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Restore from JSON Backup</span>
+          </label>
+          <input type="file" id="importJsonInput" accept=".json,application/json" class="hidden" />
+        </div>
+      </div>
+
+      <!-- 20-Week Rolling Cycle Tracker & Historical Archives -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <span class="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+              20-Week Milestone Archive
+            </span>
+            <h2 class="text-base font-extrabold text-slate-900 dark:text-white mt-1">
+              20-Week History & Reference
+            </h2>
+          </div>
+          <span id="weekMilestoneBadge" class="font-mono text-xs font-extrabold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+            Week 1 / 20
+          </span>
+        </div>
+
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Tracks your cumulative weeks across rolling 4-week cycles. Every <strong>20 weeks</strong> (5 cycles), your completed 20-week block is automatically archived for reference and rolled into a fresh 20-week block.
+        </p>
+
+        <!-- Progress bar towards 20-week auto-archive -->
+        <div>
+          <div class="flex justify-between text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+            <span>20-Week Block Progress</span>
+            <span id="weekMilestoneProgressText" class="font-mono">0 of 20 weeks logged</span>
+          </div>
+          <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+            <div id="weekMilestoneBar" class="h-full bg-amber-500 rounded-full transition-all duration-300" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button type="button" id="advanceCycleBtn"
+            class="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-slate-700 transition">
+            Log Completed 4-Wk Cycle
+          </button>
+          <button type="button" id="manualArchive20Btn"
+            class="py-2.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 text-amber-700 dark:text-amber-300 font-bold text-xs border border-amber-500/30 transition">
+            Archive Current Block Now
+          </button>
+        </div>
+
+        <!-- Saved 20-Week Archives List -->
+        <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+          <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+            Archived 20-Week Reference Blocks (<span id="archiveCountLabel">0</span>)
+          </h3>
+          <div id="archivesListContainer" class="space-y-2.5">
+            <p class="text-xs text-slate-400 italic">No 20-week archives saved yet.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Android Home Screen Installation Tip -->
+      <div class="bg-emerald-500/10 dark:bg-emerald-950/40 rounded-2xl p-4 border border-emerald-500/30 space-y-2">
+        <h3 class="text-sm font-extrabold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+          <span>Install on Android Home Screen</span>
+        </h3>
+        <div id="pwaInstallBtnWrap" class="hidden pt-1 pb-1">
+          <button type="button" id="pwaInstallBtn"
+            class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-xs shadow transition">
+            Tap Here to Install App on Android
+          </button>
+        </div>
+        <ol class="text-xs text-slate-700 dark:text-slate-300 space-y-1.5 list-decimal list-inside">
+          <li><strong>Important:</strong> Chrome only shows <em>"Add to Home screen"</em> when opened over <strong>https://</strong> (such as Netlify Drop or GitHub Pages)—not from a local <code>file:///</code> download or inside an embedded chat preview.</li>
+          <li>Open the hosted <strong>https://</strong> link in <strong>Google Chrome</strong> on Android.</li>
+          <li>Tap the <strong>three-dot menu (⋮)</strong> in the top-right corner, then tap <strong>"Add to Home screen"</strong> or <strong>"Install app"</strong>.</li>
+        </ol>
+      </div>
+
+      <!-- Reset 4-Week Cycle (Two-Step Confirmation, No browser confirm()) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-rose-500/30">
+        <h3 class="text-sm font-extrabold text-rose-600 dark:text-rose-400">Start New 4-Week Rolling Cycle</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-3">
+          Clears all 20 shift entries so you can begin a fresh 4-week period. Export a CSV/JSON backup first if you want to archive your past shifts.
+        </p>
+
+        <div id="resetInitialBox">
+          <button type="button" id="initiateResetBtn"
+            class="w-full py-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-600 dark:text-rose-400 font-bold text-xs border border-rose-500/30 transition">
+            Reset All 20 Shifts
+          </button>
+        </div>
+
+        <div id="resetConfirmBox" class="hidden space-y-2">
+          <p class="text-xs font-bold text-rose-600 dark:text-rose-400 text-center">
+            Are you sure? This will erase all 20 shifts permanently.
+          </p>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" id="cancelResetBtn"
+              class="py-3 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs">
+              Cancel
+            </button>
+            <button type="button" id="confirmResetBtn"
+              class="py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs">
+              Yes, Erase All
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- BOTTOM ANDROID NAVIGATION BAR -->
+  <nav class="fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 nav-safe">
+    <div class="max-w-lg mx-auto grid grid-cols-4 h-16">
+      <button type="button" data-nav="today" class="nav-btn flex flex-col items-center justify-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span class="text-[11px]">Today's Shift</span>
+      </button>
+
+      <button type="button" data-nav="summary" class="nav-btn flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 font-semibold transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        <span class="text-[11px]">Summary</span>
+      </button>
+
+      <button type="button" data-nav="log" class="nav-btn flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 font-semibold transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+        <span class="text-[11px]">20-Shift Log</span>
+      </button>
+
+      <button type="button" data-nav="settings" class="nav-btn flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 font-semibold transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        <span class="text-[11px]">Settings</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- APPLICATION LOGIC -->
+  <script>
+    (function () {
+      'use strict';
+
+      // ============================================================
+      // 1. STATE & CONSTANTS
+      // ============================================================
+      const STORAGE_KEY = 'morrisons_vitesse_tracker_v1';
+
+      const defaultState = () => ({
+        settings: {
+          efficiencyBenchmark: 85.0,
+          pickoutTarget: 1575,
+          theme: 'dark'
+        },
+        cumulativeWeeksInBlock: 0,
+        currentBlockShifts: [],
+        archives: [],
+        shifts: Array.from({ length: 20 }, (_, idx) => ({
+          id: idx + 1,
+          week: Math.floor(idx / 5) + 1,
+          shiftInWeek: (idx % 5) + 1,
+          date: '',
+          efficiency: null,
+          cases: null,
+          hours: null,
+          department: '',
+          notes: ''
+        }))
+      });
+
+      let state = loadState();
+// ... existing code ... -->
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return defaultState();
+          const parsed = JSON.parse(raw);
+          const base = defaultState();
+          return {
+            settings: { ...base.settings, ...(parsed.settings || {}) },
+            cumulativeWeeksInBlock: Number(parsed.cumulativeWeeksInBlock) || 0,
+            currentBlockShifts: Array.isArray(parsed.currentBlockShifts) ? parsed.currentBlockShifts : [],
+            archives: Array.isArray(parsed.archives) ? parsed.archives : [],
+            shifts: Array.isArray(parsed.shifts) && parsed.shifts.length === 20
+              ? parsed.shifts
+              : base.shifts
+          };
+        } catch (err) {
+          console.error('Failed to load state:', err);
+          return defaultState();
+        }
+      }
+
+      function saveState() {
+// ... existing code ... -->
+      function handleSaveShift() {
+        const shift = state.shifts.find(s => s.id === activeSlotId);
+        if (!shift) return;
+
+        const dateVal = document.getElementById('shiftDateInput').value || getTodayISODate();
+        const rawEff = document.getElementById('efficiencyInput').value.trim();
+        const rawCases = document.getElementById('casesInput').value.trim();
+        const rawHours = document.getElementById('hoursInput').value.trim();
+
+        shift.date = dateVal;
+        shift.efficiency = rawEff === '' ? null : parseFloat(rawEff);
+        shift.cases = rawCases === '' ? null : Math.max(0, parseInt(rawCases, 10));
+        shift.hours = rawHours === '' ? null : parseFloat(rawHours);
+        shift.department = document.getElementById('deptInput').value;
+        shift.notes = document.getElementById('notesInput').value.trim();
+
+        // Check if all 20 shifts in the current 4-week sheet are now filled; if so, auto-roll 4 weeks into the 20-week counter
+        const all20Filled = state.shifts.every(
+          s => s.efficiency !== null || s.cases !== null
+        );
+        if (all20Filled) {
+          commitFourWeekCycleToBlock(true);
+          return;
+        }
+
+        saveState();
+        populateSlotDropdown();
+        document.getElementById('slotSelect').value = String(activeSlotId);
+        showToast(`Saved Week ${shift.week} • Shift ${shift.shiftInWeek}`);
+      }
+
+      // ============================================================
+      // 5B. 20-WEEK ARCHIVING & REFERENCE ENGINE
+      // ============================================================
+      function commitFourWeekCycleToBlock(autoResetActive4Weeks = true) {
+        const filledShifts = state.shifts.filter(
+          s => s.efficiency !== null || s.cases !== null || s.date
+        );
+        if (filledShifts.length === 0) {
+          showToast('Log at least one shift before rolling a cycle.', true);
+          return;
+        }
+
+        // Determine how many distinct weeks have data in the active 4-week tracker
+        const activeWeeksWithData = [1, 2, 3, 4].filter(w =>
+          state.shifts.some(s => s.week === w && (s.efficiency !== null || s.cases !== null))
+        ).length || 1;
+
+        const cycleNumber = Math.floor(state.cumulativeWeeksInBlock / 4) + 1;
+        const taggedShifts = filledShifts.map(s => ({
+          ...s,
+          blockWeek: state.cumulativeWeeksInBlock + s.week,
+          cycle: cycleNumber
+        }));
+
+        state.currentBlockShifts.push(...taggedShifts);
+        state.cumulativeWeeksInBlock += activeWeeksWithData;
+
+        // If 20 weeks (or more) have been reached, create a permanent 20-week archive snapshot
+        if (state.cumulativeWeeksInBlock >= 20) {
+          finalizeTwentyWeekArchive();
+        } else {
+          if (autoResetActive4Weeks) {
+            const preservedSettings = { ...state.settings };
+            const preservedBlock = state.currentBlockShifts;
+            const preservedWeeks = state.cumulativeWeeksInBlock;
+            const preservedArchives = state.archives;
+            state = defaultState();
+            state.settings = preservedSettings;
+            state.currentBlockShifts = preservedBlock;
+            state.cumulativeWeeksInBlock = preservedWeeks;
+            state.archives = preservedArchives;
+          }
+          saveState();
+          resolveInitialShiftSlot();
+          loadSlotIntoForm(activeSlotId, true);
+          renderArchiveSection();
+          showToast(`4-week cycle logged (${state.cumulativeWeeksInBlock}/20 weeks)`);
+        }
+      }
+
+      function finalizeTwentyWeekArchive(forceManual = false) {
+        // Include any active shifts not yet pushed into currentBlockShifts
+        const activeFilled = state.shifts
+          .filter(s => s.efficiency !== null || s.cases !== null || s.date)
+          .map(s => ({
+            ...s,
+            blockWeek: state.cumulativeWeeksInBlock + s.week
+          }));
+
+        const combinedShifts = [...state.currentBlockShifts, ...activeFilled];
+        if (combinedShifts.length === 0) {
+          showToast('No shift data available to archive.', true);
+          return;
+        }
+
+        const effList = combinedShifts
+          .filter(s => s.efficiency !== null && !isNaN(s.efficiency))
+          .map(s => Number(s.efficiency));
+        const caseList = combinedShifts
+          .filter(s => s.cases !== null && !isNaN(s.cases))
+          .map(s => Number(s.cases));
+
+        const avgEff = effList.length > 0
+          ? effList.reduce((a, b) => a + b, 0) / effList.length
+          : null;
+        const totalCases = caseList.reduce((a, b) => a + b, 0);
+        const target = Number(state.settings.pickoutTarget) || 1575;
+        const benchmark = Number(state.settings.efficiencyBenchmark) || 85.0;
+        const pickoutHits = caseList.filter(c => c >= target).length;
+        const benchHits = effList.filter(e => e >= benchmark).length;
+
+        const dates = combinedShifts.map(s => s.date).filter(Boolean).sort();
+        const dateRange = dates.length > 0
+          ? `${formatUKDate(dates[0])} – ${formatUKDate(dates[dates.length - 1])}`
+          : `Archived ${formatUKDate(getTodayISODate())}`;
+
+        const archiveEntry = {
+          id: `arch_${Date.now()}`,
+          label: `20-Week Block #${state.archives.length + 1}`,
+          archivedOn: getTodayISODate(),
+          dateRange,
+          weeksCovered: forceManual
+            ? Math.max(state.cumulativeWeeksInBlock, [1, 2, 3, 4].filter(w => state.shifts.some(s => s.week === w && (s.efficiency !== null || s.cases !== null))).length)
+            : 20,
+          totalShifts: combinedShifts.length,
+          avgEfficiency: avgEff,
+          benchHits,
+          effCount: effList.length,
+          totalCases,
+          pickoutHits,
+          shifts: combinedShifts
+        };
+
+        state.archives.unshift(archiveEntry);
+
+        // Reset active 4-week tracker & 20-week counter for the next 20-week period
+        const preservedSettings = { ...state.settings };
+        const preservedArchives = state.archives;
+        state = defaultState();
+        state.settings = preservedSettings;
+        state.archives = preservedArchives;
+
+        saveState();
+        resolveInitialShiftSlot();
+        loadSlotIntoForm(activeSlotId, true);
+        renderArchiveSection();
+        showToast('20-Week block archived for reference!');
+      }
+
+      function renderArchiveSection() {
+        const weeksDone = Math.min(20, state.cumulativeWeeksInBlock);
+        const pct = (weeksDone / 20) * 100;
+        const badge = document.getElementById('weekMilestoneBadge');
+        const progText = document.getElementById('weekMilestoneProgressText');
+        const bar = document.getElementById('weekMilestoneBar');
+        const countLabel = document.getElementById('archiveCountLabel');
+        const container = document.getElementById('archivesListContainer');
+
+        if (!badge || !container) return;
+
+        badge.textContent = `Week ${weeksDone} / 20`;
+        progText.textContent = `${weeksDone} of 20 weeks logged`;
+        bar.style.width = `${pct}%`;
+        countLabel.textContent = String(state.archives.length);
+
+        if (state.archives.length === 0) {
+          container.innerHTML = '<p class="text-xs text-slate-400 italic">No 20-week archives saved yet.</p>';
+          return;
+        }
+
+        container.innerHTML = '';
+        state.archives.forEach(arch => {
+          const effStr = arch.avgEfficiency !== null ? `${arch.avgEfficiency.toFixed(1)}%` : '--.-%';
+          const item = document.createElement('div');
+          item.className = 'p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-2';
+          item.innerHTML = `
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <span class="text-xs font-extrabold text-slate-900 dark:text-white">${arch.label}</span>
+                <span class="block text-[11px] text-slate-500 dark:text-slate-400">${arch.dateRange}</span>
+              </div>
+              <span class="font-mono text-xs font-extrabold px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+                Avg Eff: ${effStr}
+              </span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300">
+              <span>Shifts: <strong>${arch.totalShifts}</strong> (${arch.benchHits}/${arch.effCount} ≥ target)</span>
+              <span>Cases: <strong class="font-mono">${arch.totalCases.toLocaleString()}</strong> (${arch.pickoutHits} hits)</span>
+            </div>
+            <div class="flex gap-2 pt-1">
+              <button type="button" data-export-arch="${arch.id}"
+                class="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-[11px] font-bold text-slate-800 dark:text-slate-100 transition">
+                Download CSV
+              </button>
+              <button type="button" data-delete-arch="${arch.id}"
+                class="py-1.5 px-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-[11px] font-bold text-rose-600 dark:text-rose-400 transition">
+                Delete
+              </button>
+            </div>
+          `;
+          container.appendChild(item);
+        });
+
+        container.querySelectorAll('[data-export-arch]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-export-arch');
+            const arch = state.archives.find(a => a.id === id);
+            if (!arch) return;
+            const headers = ['Block Week', 'Date Worked', 'Daily Efficiency %', 'Daily Cases Picked', 'Hours Worked', 'Task / Department', 'Notes'];
+            const rows = arch.shifts.map(s => [
+              `Week ${s.blockWeek || s.week}`,
+              s.date || '',
+              s.efficiency !== null ? `${Number(s.efficiency).toFixed(1)}%` : '',
+              s.cases !== null ? s.cases : '',
+              s.hours !== null ? s.hours : '',
+              s.department || '',
+              `"${String(s.notes || '').replace(/"/g, '""')}"`
+            ].join(','));
+            downloadFile([headers.join(','), ...rows].join('\n'), `${arch.label.replace(/\s+/g, '_')}_${arch.archivedOn}.csv`, 'text/csv;charset=utf-8;');
+            showToast(`Exported ${arch.label} CSV`);
+          });
+        });
+
+        container.querySelectorAll('[data-delete-arch]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-delete-arch');
+            state.archives = state.archives.filter(a => a.id !== id);
+            saveState();
+            renderArchiveSection();
+            showToast('Archive removed');
+          });
+        });
+      }
+
+      function handleClearCurrentShift() {
+        const shift = state.shifts.find(s => s.id === activeSlotId);
+        if (!shift) return;
+        shift.date = '';
+        shift.efficiency = null;
+        shift.cases = null;
+        shift.hours = null;
+        shift.department = '';
+        shift.notes = '';
+        saveState();
+        loadSlotIntoForm(activeSlotId, true);
+        showToast(`Cleared Week ${shift.week} • Shift ${shift.shiftInWeek}`);
+      }
+
+      // ============================================================
+      // 6. ANALYTICS & SUMMARY ENGINE (EXCLUDING BLANK SHIFTS)
+      // ============================================================
+      function computeAnalytics() {
+        const benchmark = Number(state.settings.efficiencyBenchmark) || 85.0;
+        const target = Number(state.settings.pickoutTarget) || 1575;
+
+        // Efficiency metrics (strictly from non-null daily efficiency values)
+        const effShifts = state.shifts.filter(s => s.efficiency !== null && !isNaN(s.efficiency));
+        const effValues = effShifts.map(s => Number(s.efficiency));
+        const overallEff = effValues.length > 0
+          ? effValues.reduce((a, b) => a + b, 0) / effValues.length
+          : null;
+        const shiftsMeetingBench = effValues.filter(v => v >= benchmark).length;
+        const highestEff = effValues.length > 0 ? Math.max(...effValues) : null;
+        const lowestEff = effValues.length > 0 ? Math.min(...effValues) : null;
+
+        // Case metrics (strictly from non-null final shift case totals)
+        const caseShifts = state.shifts.filter(s => s.cases !== null && !isNaN(s.cases));
+        const caseValues = caseShifts.map(s => Number(s.cases));
+        const totalCases = caseValues.reduce((a, b) => a + b, 0);
+        const avgCases = caseValues.length > 0 ? totalCases / caseValues.length : 0;
+        const pickoutHits = caseValues.filter(c => c >= target).length;
+
+        // Weekly summaries (Weeks 1–4)
+        const weeks = [1, 2, 3, 4].map(w => {
+          const wShifts = state.shifts.filter(s => s.week === w);
+          const wEffs = wShifts.filter(s => s.efficiency !== null && !isNaN(s.efficiency)).map(s => Number(s.efficiency));
+          const wCases = wShifts.filter(s => s.cases !== null && !isNaN(s.cases)).map(s => Number(s.cases));
+          const loggedCount = wShifts.filter(s => s.efficiency !== null || s.cases !== null || s.date).length;
+
+          return {
+            week: w,
+            loggedCount,
+            effCount: wEffs.length,
+            avgEff: wEffs.length > 0 ? wEffs.reduce((a, b) => a + b, 0) / wEffs.length : null,
+            totalCases: wCases.reduce((a, b) => a + b, 0),
+            pickoutHits: wCases.filter(c => c >= target).length
+          };
+        });
+
+        return {
+          benchmark,
+          target,
+          effCount: effValues.length,
+          overallEff,
+          shiftsMeetingBench,
+          highestEff,
+          lowestEff,
+          caseCount: caseValues.length,
+          totalCases,
+          avgCases,
+          pickoutHits,
+          weeks
+        };
+      }
+
+      function renderSummaryScreen() {
+        const stats = computeAnalytics();
+        document.getElementById('sumBenchRef').textContent = `${stats.benchmark.toFixed(1)}%`;
+        document.getElementById('chartBenchText').textContent = `${stats.benchmark.toFixed(1)}%`;
+
+        const overallEl = document.getElementById('sumOverallEffValue');
+        const varEl = document.getElementById('sumOverallVariance');
+        const badgeEl = document.getElementById('sumOverallEffBadge');
+
+        if (stats.overallEff === null) {
+          overallEl.textContent = '--.-%';
+          varEl.textContent = '--';
+          varEl.className = 'font-mono text-lg font-extrabold text-slate-500';
+          badgeEl.textContent = 'No Shifts Logged';
+          badgeEl.className = 'px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-slate-200 dark:bg-slate-800 text-slate-500';
+        } else {
+          overallEl.textContent = `${stats.overallEff.toFixed(1)}%`;
+          const diff = stats.overallEff - stats.benchmark;
+          varEl.textContent = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`;
+
+          const tier = getEfficiencyTier(stats.overallEff, stats.benchmark);
+          if (tier === 'green') {
+            badgeEl.textContent = 'Above Benchmark';
+            badgeEl.className = 'px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40';
+            varEl.className = 'font-mono text-lg font-extrabold text-emerald-600 dark:text-emerald-400';
+          } else if (tier === 'amber') {
+            badgeEl.textContent = 'Near Benchmark';
+            badgeEl.className = 'px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40';
+            varEl.className = 'font-mono text-lg font-extrabold text-amber-600 dark:text-amber-400';
+          } else {
+            badgeEl.textContent = 'Below Benchmark';
+            badgeEl.className = 'px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40';
+            varEl.className = 'font-mono text-lg font-extrabold text-rose-600 dark:text-rose-400';
+          }
+        }
+
+        document.getElementById('sumShiftsMeetingBench').textContent =
+          `${stats.shiftsMeetingBench} / ${stats.effCount}`;
+        document.getElementById('sumHighestEff').textContent =
+          stats.highestEff !== null ? `${stats.highestEff.toFixed(1)}%` : '--';
+        document.getElementById('sumLowestEff').textContent =
+          stats.lowestEff !== null ? `${stats.lowestEff.toFixed(1)}%` : '--';
+
+        // Case Pick Totals
+        document.getElementById('sumTotalCases').textContent = stats.totalCases.toLocaleString();
+        document.getElementById('sumAvgCases').textContent = Math.round(stats.avgCases).toLocaleString();
+        document.getElementById('sumPickoutRatio').textContent = `${stats.pickoutHits} / ${stats.caseCount}`;
+        document.getElementById('sumPickoutHitsBadge').textContent = `${stats.pickoutHits} Pickouts`;
+
+        // Weekly Cards
+        const weeklyContainer = document.getElementById('weeklyCardsContainer');
+        weeklyContainer.innerHTML = '';
+
+        stats.weeks.forEach(w => {
+          const tier = getEfficiencyTier(w.avgEff, stats.benchmark);
+          let badgeClass = 'bg-slate-200 dark:bg-slate-800 text-slate-500';
+          let effText = '--.-%';
+          let varText = '';
+
+          if (w.avgEff !== null) {
+            effText = `${w.avgEff.toFixed(1)}%`;
+            const diff = w.avgEff - stats.benchmark;
+            varText = `(${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%)`;
+            if (tier === 'green') badgeClass = 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40';
+            else if (tier === 'amber') badgeClass = 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40';
+            else badgeClass = 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40';
+          }
+
+          const card = document.createElement('div');
+          card.className = 'flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/70';
+          card.innerHTML = `
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-extrabold text-sm text-slate-900 dark:text-white">Week ${w.week}</span>
+                <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  ${w.effCount}/5 shifts
+                </span>
+              </div>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Cases: <strong class="font-mono text-slate-700 dark:text-slate-200">${w.totalCases.toLocaleString()}</strong>
+                • Pickouts: <strong class="text-sky-600 dark:text-sky-400">${w.pickoutHits}</strong>
+              </p>
+            </div>
+            <div class="text-right">
+              <span class="inline-block font-mono text-sm font-extrabold px-2.5 py-1 rounded-lg ${badgeClass}">
+                ${effText}
+              </span>
+              <span class="block font-mono text-[11px] text-slate-400 mt-0.5">${varText}</span>
+            </div>
+          `;
+          weeklyContainer.appendChild(card);
+        });
+
+        renderCharts(stats);
+      }
+
+      function renderCharts(stats) {
+        if (typeof Chart === 'undefined') return;
+
+        const isDark = document.documentElement.classList.contains('dark');
+        const gridColor = isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(15, 23, 42, 0.08)';
+        const tickColor = isDark ? '#94a3b8' : '#475569';
+
+        // Destroy previous instances safely
+        if (charts.dailyEff) charts.dailyEff.destroy();
+        if (charts.weeklyEff) charts.weeklyEff.destroy();
+        if (charts.dailyCases) charts.dailyCases.destroy();
+
+        const labels20 = state.shifts.map(s => `W${s.week}S${s.shiftInWeek}`);
+        const effSeries = state.shifts.map(s => s.efficiency);
+        const benchmarkLine = Array(20).fill(stats.benchmark);
+
+        // Chart 1: Daily Efficiency % vs Benchmark
+        const ctx1 = document.getElementById('dailyEffChart').getContext('2d');
+        charts.dailyEff = new Chart(ctx1, {
+          type: 'line',
+          data: {
+            labels: labels20,
+            datasets: [
+              {
+                label: 'Daily Efficiency %',
+                data: effSeries,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                borderWidth: 2.5,
+                pointRadius: 4,
+                pointBackgroundColor: '#10b981',
+                tension: 0.25,
+                spanGaps: true
+              },
+              {
+                label: `Benchmark (${stats.benchmark}%)`,
+                data: benchmarkLine,
+                borderColor: '#f59e0b',
+                borderWidth: 1.5,
+                borderDash: [5, 5],
+                pointRadius: 0,
+                fill: false
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { labels: { color: tickColor, boxWidth: 12, font: { size: 11 } } }
+            },
+            scales: {
+              x: { ticks: { color: tickColor, font: { size: 10 }, maxRotation: 45 }, grid: { display: false } },
+              y: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor } }
+            }
+          }
+        });
+
+        // Chart 2: Weekly Average Efficiency
+        const ctx2 = document.getElementById('weeklyEffChart').getContext('2d');
+        const weeklyData = stats.weeks.map(w => w.avgEff);
+        const weeklyColors = weeklyData.map(v => {
+          if (v === null) return 'rgba(148, 163, 184, 0.3)';
+          if (v >= stats.benchmark) return '#10b981';
+          if (v >= stats.benchmark - 5) return '#f59e0b';
+          return '#f43f5e';
+        });
+
+        charts.weeklyEff = new Chart(ctx2, {
+          type: 'bar',
+          data: {
+            labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+            datasets: [{
+              label: 'Weekly Avg %',
+              data: weeklyData,
+              backgroundColor: weeklyColors,
+              borderRadius: 8
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { color: tickColor, font: { size: 11 } }, grid: { display: false } },
+              y: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor }, suggestedMin: 60 }
+            }
+          }
+        });
+
+        // Chart 3: Cases Picked vs Pickout Target
+        const ctx3 = document.getElementById('dailyCasesChart').getContext('2d');
+        const caseSeries = state.shifts.map(s => s.cases);
+        const targetLine = Array(20).fill(stats.target);
+
+        charts.dailyCases = new Chart(ctx3, {
+          type: 'bar',
+          data: {
+            labels: labels20,
+            datasets: [
+              {
+                label: 'Cases Picked',
+                data: caseSeries,
+                backgroundColor: caseSeries.map(c => (c !== null && c >= stats.target ? '#10b981' : '#0ea5e9')),
+                borderRadius: 4
+              },
+              {
+                type: 'line',
+                label: `Target (${stats.target})`,
+                data: targetLine,
+                borderColor: '#f59e0b',
+                borderWidth: 1.5,
+                borderDash: [5, 5],
+                pointRadius: 0
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { labels: { color: tickColor, boxWidth: 12, font: { size: 11 } } }
+            },
+            scales: {
+              x: { ticks: { color: tickColor, font: { size: 10 }, maxRotation: 45 }, grid: { display: false } },
+              y: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor } }
+            }
+          }
+        });
+      }
+
+      // ============================================================
+      // 7. 20-SHIFT ROLLING LOG RENDERER
+      // ============================================================
+      function renderShiftLog() {
+        const listEl = document.getElementById('shiftLogList');
+        listEl.innerHTML = '';
+        const benchmark = Number(state.settings.efficiencyBenchmark) || 85.0;
+        const target = Number(state.settings.pickoutTarget) || 1575;
+
+        const filtered = logWeekFilter === 'all'
+          ? state.shifts
+          : state.shifts.filter(s => String(s.week) === String(logWeekFilter));
+
+        filtered.forEach(s => {
+          const hasData = s.efficiency !== null || s.cases !== null || s.date;
+          const tier = getEfficiencyTier(s.efficiency, benchmark);
+
+          let effPill = `<span class="text-xs font-semibold text-slate-400">Eff: --</span>`;
+          if (s.efficiency !== null) {
+            const pillStyle = tier === 'green'
+              ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+              : tier === 'amber'
+                ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40'
+                : 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40';
+            effPill = `<span class="font-mono text-xs font-extrabold px-2.5 py-1 rounded-lg border ${pillStyle}">${Number(s.efficiency).toFixed(1)}%</span>`;
+          }
+
+          let caseInfo = `<span class="text-xs text-slate-400">Cases: 0</span>`;
+          if (s.cases !== null) {
+            const hit = s.cases >= target;
+            const rem = Math.max(0, target - s.cases);
+            caseInfo = hit
+              ? `<span class="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">${s.cases.toLocaleString()} cases (Hit!)</span>`
+              : `<span class="font-mono text-xs font-bold text-sky-600 dark:text-sky-400">${s.cases.toLocaleString()} cases (${rem.toLocaleString()} left)</span>`;
+          }
+
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = `w-full text-left p-3.5 rounded-2xl border transition active:scale-[0.99] flex items-center justify-between gap-3 ${
+            hasData
+              ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm'
+              : 'bg-slate-50/70 dark:bg-slate-900/40 border-dashed border-slate-300 dark:border-slate-800'
+          }`;
+
+          card.innerHTML = `
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                  W${s.week} • Shift ${s.shiftInWeek}
+                </span>
+                <span class="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  ${s.date ? formatUKDate(s.date) : 'Open Shift'}
+                </span>
+              </div>
+              <div class="mt-1 flex items-center gap-2 flex-wrap">
+                ${caseInfo}
+                ${s.department ? `<span class="text-[11px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">${s.department}</span>` : ''}
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              ${effPill}
+              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          `;
+
+          card.addEventListener('click', () => {
+            loadSlotIntoForm(s.id, false);
+            switchScreen('today');
+          });
+
+          listEl.appendChild(card);
+        });
+      }
+
+      // ============================================================
+      // 8. EXPORT CSV (GOOGLE SHEETS COMPATIBLE) & JSON BACKUP
+      // ============================================================
+      function exportToCSV() {
+        const target = Number(state.settings.pickoutTarget) || 1575;
+        const headers = [
+          'Week',
+          'Date Worked',
+          'Daily Efficiency %',
+          'Daily Cases Picked',
+          'Cases Remaining to Pick',
+          'Cases Above Pickout',
+          'Pickout Progress %',
+          'Hours Worked',
+          'Task / Department',
+          'Notes'
+        ];
+
+        const rows = state.shifts.map(s => {
+          const cases = s.cases !== null ? Number(s.cases) : '';
+          const rem = cases !== '' ? Math.max(0, target - cases) : '';
+          const above = cases !== '' ? Math.max(0, cases - target) : '';
+          const pct = cases !== '' && target > 0 ? `${((cases / target) * 100).toFixed(1)}%` : '';
+          const eff = s.efficiency !== null ? `${Number(s.efficiency).toFixed(1)}%` : '';
+          const safeNotes = `"${String(s.notes || '').replace(/"/g, '""')}"`;
+
+          return [
+            `Week ${s.week}`,
+            s.date || '',
+            eff,
+            cases,
+            rem,
+            above,
+            pct,
+            s.hours !== null ? s.hours : '',
+            s.department || '',
+            safeNotes
+          ].join(',');
+        });
+
+        const csvContent = [headers.join(','), ...rows].join('\n');
+        downloadFile(csvContent, `Vitesse_4Week_Tracker_${getTodayISODate()}.csv`, 'text/csv;charset=utf-8;');
+        showToast('CSV exported for Google Sheets!');
+      }
+
+      function exportToJSON() {
+        const jsonContent = JSON.stringify(state, null, 2);
+        downloadFile(jsonContent, `Vitesse_Backup_${getTodayISODate()}.json`, 'application/json');
+        showToast('JSON backup downloaded!');
+      }
+
+      function downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      // ============================================================
+      // 9. NAVIGATION & THEME MANAGEMENT
+      // ============================================================
+      function switchScreen(screenName) {
+        activeScreen = screenName;
+        ['today', 'summary', 'log', 'settings'].forEach(name => {
+          const sec = document.getElementById(`screen-${name}`);
+          if (sec) sec.classList.toggle('hidden', name !== screenName);
+        });
+
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+          const isTarget = btn.getAttribute('data-nav') === screenName;
+          btn.className = isTarget
+            ? 'nav-btn flex flex-col items-center justify-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold transition'
+            : 'nav-btn flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 font-semibold transition';
+        });
+
+        if (screenName === 'summary') renderSummaryScreen();
+        if (screenName === 'log') renderShiftLog();
+        if (screenName === 'settings') {
+          document.getElementById('settingBenchmarkInput').value = state.settings.efficiencyBenchmark;
+          document.getElementById('settingPickoutInput').value = state.settings.pickoutTarget;
+          renderArchiveSection();
+        }
+      }
+
+      function applyTheme(theme) {
+        const isDark = theme === 'dark';
+        document.documentElement.classList.toggle('dark', isDark);
+        state.settings.theme = theme;
+        saveState();
+      }
+
+      // ============================================================
+      // 10. EVENT LISTENERS & BOOTSTRAP
+      // ============================================================
+      function bindEvents() {
+        // Bottom Navigation
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+          btn.addEventListener('click', () => switchScreen(btn.getAttribute('data-nav')));
+        });
+
+        // Theme Toggle
+        document.getElementById('themeToggleBtn').addEventListener('click', () => {
+          const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+          applyTheme(next);
+          if (activeScreen === 'summary') renderSummaryScreen();
+        });
+
+        // Jump to Today
+        document.getElementById('jumpTodayBtn').addEventListener('click', () => {
+          resolveInitialShiftSlot();
+          loadSlotIntoForm(activeSlotId, true);
+          switchScreen('today');
+          showToast('Synced to today’s shift');
+        });
+
+        // Slot Dropdown & Date Change
+        document.getElementById('slotSelect').addEventListener('change', (e) => {
+          loadSlotIntoForm(e.target.value, false);
+        });
+
+        document.getElementById('shiftDateInput').addEventListener('change', (e) => {
+          const pickedDate = e.target.value;
+          document.getElementById('selectedDayName').textContent = getDayName(pickedDate);
+          // Check if picked date already exists in another slot
+          const existing = state.shifts.find(s => s.date === pickedDate && s.id !== activeSlotId);
+          if (existing) {
+            loadSlotIntoForm(existing.id, false);
+            showToast(`Switched to existing shift for ${formatUKDate(pickedDate)}`);
+          }
+        });
+
+        // Live Inputs
+        document.getElementById('efficiencyInput').addEventListener('input', recalculateTodayLivePreview);
+        document.getElementById('casesInput').addEventListener('input', recalculateTodayLivePreview);
+
+        // Quick Case Add Buttons
+        document.querySelectorAll('.quick-case-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const addAmt = parseInt(btn.getAttribute('data-add-cases'), 10) || 0;
+            const current = parseInt(document.getElementById('casesInput').value, 10) || 0;
+            document.getElementById('casesInput').value = current + addAmt;
+            recalculateTodayLivePreview();
+          });
+        });
+
+        document.getElementById('setPickoutExactBtn').addEventListener('click', () => {
+          document.getElementById('casesInput').value = state.settings.pickoutTarget || 1575;
+          recalculateTodayLivePreview();
+        });
+
+        // Optional Details Toggle
+        document.getElementById('toggleOptionalBtn').addEventListener('click', () => {
+          const panel = document.getElementById('optionalFieldsPanel');
+          const chev = document.getElementById('optionalChevron');
+          panel.classList.toggle('hidden');
+          chev.classList.toggle('rotate-180');
+        });
+
+        // Save & Clear Shift
+        document.getElementById('saveShiftBtn').addEventListener('click', handleSaveShift);
+        document.getElementById('clearCurrentShiftBtn').addEventListener('click', handleClearCurrentShift);
+
+        // Week Filter in 20-Shift Log
+        document.querySelectorAll('.week-filter-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            logWeekFilter = btn.getAttribute('data-week-filter');
+            document.querySelectorAll('.week-filter-btn').forEach(b => {
+              b.className = b === btn
+                ? 'week-filter-btn px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                : 'week-filter-btn px-2.5 py-1.5 rounded-lg text-slate-600 dark:text-slate-400';
+            });
+            renderShiftLog();
+          });
+        });
+
+        // Settings Save
+        document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+          const newBench = parseFloat(document.getElementById('settingBenchmarkInput').value);
+          const newTarget = parseInt(document.getElementById('settingPickoutInput').value, 10);
+          if (!isNaN(newBench) && newBench > 0) state.settings.efficiencyBenchmark = newBench;
+          if (!isNaN(newTarget) && newTarget > 0) state.settings.pickoutTarget = newTarget;
+          saveState();
+          recalculateTodayLivePreview();
+          showToast('Benchmark & target settings updated!');
+        });
+
+        // 20-Week Archive & Cycle Rollover Controls
+        document.getElementById('advanceCycleBtn').addEventListener('click', () => {
+          commitFourWeekCycleToBlock(true);
+        });
+        document.getElementById('manualArchive20Btn').addEventListener('click', () => {
+          finalizeTwentyWeekArchive(true);
+        });
+
+        // Export & Restore
+        document.getElementById('exportCsvBtn').addEventListener('click', exportToCSV);
+        document.getElementById('exportJsonBtn').addEventListener('click', exportToJSON);
+
+        document.getElementById('importJsonInput').addEventListener('change', (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            try {
+              const imported = JSON.parse(ev.target.result);
+              if (imported && Array.isArray(imported.shifts) && imported.shifts.length === 20) {
+                state = {
+                  settings: { ...state.settings, ...(imported.settings || {}) },
+                  cumulativeWeeksInBlock: Number(imported.cumulativeWeeksInBlock) || 0,
+                  currentBlockShifts: Array.isArray(imported.currentBlockShifts) ? imported.currentBlockShifts : [],
+                  archives: Array.isArray(imported.archives) ? imported.archives : [],
+                  shifts: imported.shifts
+                };
+                saveState();
+                resolveInitialShiftSlot();
+                loadSlotIntoForm(activeSlotId, false);
+                renderArchiveSection();
+                showToast('Backup restored successfully!');
+              } else {
+                showToast('Invalid backup file format.', true);
+              }
+            } catch (err) {
+              showToast('Could not read JSON backup file.', true);
+            }
+          };
+          reader.readAsText(file);
+          e.target.value = '';
+        });
+
+        // Two-Step Reset Cycle
+        document.getElementById('initiateResetBtn').addEventListener('click', () => {
+          document.getElementById('resetInitialBox').classList.add('hidden');
+          document.getElementById('resetConfirmBox').classList.remove('hidden');
+        });
+        document.getElementById('cancelResetBtn').addEventListener('click', () => {
+          document.getElementById('resetConfirmBox').classList.add('hidden');
+          document.getElementById('resetInitialBox').classList.remove('hidden');
+        });
+        document.getElementById('confirmResetBtn').addEventListener('click', () => {
+          const preservedSettings = { ...state.settings };
+          const preservedBlock = state.currentBlockShifts;
+          const preservedWeeks = state.cumulativeWeeksInBlock;
+          const preservedArchives = state.archives;
+          state = defaultState();
+          state.settings = preservedSettings;
+          state.currentBlockShifts = preservedBlock;
+          state.cumulativeWeeksInBlock = preservedWeeks;
+          state.archives = preservedArchives;
+          saveState();
+          document.getElementById('resetConfirmBox').classList.add('hidden');
+          document.getElementById('resetInitialBox').classList.remove('hidden');
+          resolveInitialShiftSlot();
+          loadSlotIntoForm(activeSlotId, true);
+          showToast('New 4-week cycle ready!');
+        });
+      }
+
+      // Initialize App
+      applyTheme(state.settings.theme || 'dark');
+      updateLiveClock();
+      setInterval(updateLiveClock, 1000);
+      resolveInitialShiftSlot();
+      loadSlotIntoForm(activeSlotId, true);
+      bindEvents();
+
+      // Handle Chrome's native Install Prompt when served over HTTPS
+      let deferredInstallPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        const wrap = document.getElementById('pwaInstallBtnWrap');
+        if (wrap) wrap.classList.remove('hidden');
+      });
+
+      const installBtn = document.getElementById('pwaInstallBtn');
+      if (installBtn) {
+        installBtn.addEventListener('click', async () => {
+          if (!deferredInstallPrompt) return;
+          deferredInstallPrompt.prompt();
+          await deferredInstallPrompt.userChoice;
+          deferredInstallPrompt = null;
+          document.getElementById('pwaInstallBtnWrap').classList.add('hidden');
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
